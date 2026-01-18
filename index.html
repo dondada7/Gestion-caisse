@@ -7,359 +7,284 @@
   <title>💰 Gestion de Caisse</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/recharts@2.5.0/dist/Recharts.js"></script>
 </head>
-<body class="min-h-screen">
-  <div id="root"></div>
+<body class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+  <div id="root">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p class="text-gray-600">Chargement...</p>
+      </div>
+    </div>
+  </div>
 
-  <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
-    const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+  <script>
+    const CREDS = { identifiant: "admin", code: "1234" };
+    
+    const state = {
+      auth: localStorage.getItem("isAuthenticated") === "true",
+      tab: "recettes",
+      recettes: JSON.parse(localStorage.getItem("recettes") || "[]"),
+      fonds: JSON.parse(localStorage.getItem("fondsCaisse") || "[]"),
+      showForm: false,
+      form: { montant: "", date: new Date().toISOString().slice(0,10), note: "", categorie: "especes" }
+    };
 
-    // Icônes
-    const Icon = ({ children, size = 24, className = "" }) => (
-      <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        {children}
-      </svg>
-    );
+    function save() {
+      localStorage.setItem("recettes", JSON.stringify(state.recettes));
+      localStorage.setItem("fondsCaisse", JSON.stringify(state.fonds));
+    }
 
-    const Camera = (p) => <Icon {...p}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></Icon>;
-    const ImageIcon = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></Icon>;
-    const TrendingUp = (p) => <Icon {...p}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></Icon>;
-    const DollarSign = (p) => <Icon {...p}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></Icon>;
-    const Calendar = (p) => <Icon {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Icon>;
-    const Plus = (p) => <Icon {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Icon>;
-    const Trash2 = (p) => <Icon {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></Icon>;
-    const CreditCard = (p) => <Icon {...p}><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></Icon>;
-    const Smartphone = (p) => <Icon {...p}><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></Icon>;
-    const Banknote = (p) => <Icon {...p}><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></Icon>;
-    const Lock = (p) => <Icon {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></Icon>;
-    const LogOut = (p) => <Icon {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Icon>;
-
-    const todayISO = () => new Date().toISOString().slice(0, 10);
-    const parseAmount = (x) => { const v = parseFloat(typeof x === "string" ? x.replace(",", ".") : x); return Number.isFinite(v) ? v : null; };
-    const sumAmounts = (list) => (list || []).reduce((acc, it) => acc + (Number(it.montant) || 0), 0);
-    const fmtEUR = (n) => (Number(n) || 0).toFixed(2) + " €";
-
-    function App() {
-      const [auth, setAuth] = useState(false);
-      const [login, setLogin] = useState({ identifiant: "", code: "" });
-      const [tab, setTab] = useState("recettes");
-      const [recettes, setRecettes] = useState([]);
-      const [fonds, setFonds] = useState([]);
-      const [showForm, setShowForm] = useState(false);
-      const [form, setForm] = useState({ montant: "", date: todayISO(), note: "", categorie: "especes" });
-      const [ocrLoad, setOcrLoad] = useState(false);
-
-      const CREDS = useMemo(() => ({ identifiant: "admin", code: "1234" }), []);
-
-      useEffect(() => {
-        if (localStorage.getItem("isAuthenticated") === "true") {
-          setAuth(true);
-          loadData();
-        }
-      }, []);
-
-      function loadData() {
-        try {
-          const r = localStorage.getItem("recettes");
-          const f = localStorage.getItem("fondsCaisse");
-          if (r) setRecettes(JSON.parse(r));
-          if (f) setFonds(JSON.parse(f));
-        } catch (e) { console.error(e); }
+    function render() {
+      const root = document.getElementById("root");
+      if (!state.auth) {
+        root.innerHTML = `
+          <div class="min-h-screen bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+              <div class="text-center mb-8">
+                <div class="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                  </svg>
+                </div>
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">Gestion de Caisse</h1>
+                <p class="text-gray-600">Connectez-vous pour continuer</p>
+              </div>
+              <form id="loginForm" class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Identifiant</label>
+                  <input type="text" id="username" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="admin" required>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-2">Code</label>
+                  <input type="password" id="password" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="1234" required>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition shadow-lg">
+                  Se connecter
+                </button>
+              </form>
+              <div class="mt-4 text-xs text-gray-500 text-center">
+                Par défaut: admin / 1234
+              </div>
+            </div>
+          </div>
+        `;
+        document.getElementById("loginForm").onsubmit = (e) => {
+          e.preventDefault();
+          const user = document.getElementById("username").value;
+          const pass = document.getElementById("password").value;
+          if (user === CREDS.identifiant && pass === CREDS.code) {
+            state.auth = true;
+            localStorage.setItem("isAuthenticated", "true");
+            render();
+          } else {
+            alert("Identifiant ou code incorrect");
+          }
+        };
+        return;
       }
 
-      function saveData(r, f) {
-        localStorage.setItem("recettes", JSON.stringify(r));
-        localStorage.setItem("fondsCaisse", JSON.stringify(f));
-      }
+      const data = state.tab === "recettes" ? state.recettes : state.fonds;
+      const today = new Date().toISOString().slice(0,10);
+      const month = new Date().getMonth();
+      const year = new Date().getFullYear();
 
-      function handleLogin(e) {
-        e.preventDefault();
-        if (login.identifiant === CREDS.identifiant && login.code === CREDS.code) {
-          setAuth(true);
-          localStorage.setItem("isAuthenticated", "true");
-          loadData();
-        } else {
-          alert("Identifiant ou code incorrect");
-          setLogin({ identifiant: "", code: "" });
-        }
-      }
-
-      function handleLogout() {
-        setAuth(false);
-        localStorage.removeItem("isAuthenticated");
-      }
-
-      async function handlePhoto(e) {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        try {
-          if (!window.Tesseract) { alert("OCR non chargé"); return; }
-          setOcrLoad(true);
-          const { data: { text } } = await window.Tesseract.recognize(file, "fra");
-          const nums = (text.match(/\d{1,6}(?:[.,]\d{1,2})?/g) || []).map(s => parseAmount(s.replace(/\s/g, ""))).filter(v => v !== null);
-          if (nums.length) setForm(p => ({ ...p, montant: String(Math.max(...nums)) }));
-          else alert("Aucun montant détecté");
-        } catch (err) { alert("Erreur OCR"); }
-        finally { setOcrLoad(false); e.target.value = ""; }
-      }
-
-      function addEntry() {
-        const amt = parseAmount(form.montant);
-        if (!amt) { alert("Montant invalide"); return; }
-        if (!form.date) { alert("Date requise"); return; }
-        const entry = { id: Date.now(), montant: amt, date: form.date, note: form.note.trim(), categorie: form.categorie };
-        if (tab === "recettes") {
-          const n = [...recettes, entry];
-          setRecettes(n);
-          saveData(n, fonds);
-        } else {
-          const n = [...fonds, entry];
-          setFonds(n);
-          saveData(recettes, n);
-        }
-        setForm({ montant: "", date: todayISO(), note: "", categorie: "especes" });
-        setShowForm(false);
-      }
-
-      function delEntry(id) {
-        if (!confirm("Supprimer ?")) return;
-        if (tab === "recettes") {
-          const n = recettes.filter(r => r.id !== id);
-          setRecettes(n);
-          saveData(n, fonds);
-        } else {
-          const n = fonds.filter(f => f.id !== id);
-          setFonds(n);
-          saveData(recettes, n);
-        }
-      }
-
-      const data = tab === "recettes" ? recettes : fonds;
-      const today = todayISO();
-      const { m, y } = useMemo(() => { const d = new Date(); return { m: d.getMonth(), y: d.getFullYear() }; }, []);
-
-      const dayTotal = useMemo(() => sumAmounts(data.filter(x => x.date === today)), [data]);
-      const monthTotal = useMemo(() => sumAmounts(data.filter(x => { const d = new Date(x.date); return d.getMonth() === m && d.getFullYear() === y; })), [data, m, y]);
+      const dayTotal = data.filter(x => x.date === today).reduce((s, x) => s + x.montant, 0);
+      const monthTotal = data.filter(x => {
+        const d = new Date(x.date);
+        return d.getMonth() === month && d.getFullYear() === year;
+      }).reduce((s, x) => s + x.montant, 0);
 
       function catTotal(cat, mode) {
-        return sumAmounts(data.filter(x => {
+        return data.filter(x => {
           if (x.categorie !== cat) return false;
           if (mode === "day") return x.date === today;
           const d = new Date(x.date);
-          return d.getMonth() === m && d.getFullYear() === y;
-        }));
+          return d.getMonth() === month && d.getFullYear() === year;
+        }).reduce((s, x) => s + x.montant, 0);
       }
 
-      const dayEsp = useMemo(() => catTotal("especes", "day"), [data]);
-      const dayCB = useMemo(() => catTotal("cb", "day"), [data]);
-      const dayBorne = useMemo(() => catTotal("borne", "day"), [data]);
-      const monthEsp = useMemo(() => catTotal("especes", "month"), [data]);
-      const monthCB = useMemo(() => catTotal("cb", "month"), [data]);
-      const monthBorne = useMemo(() => catTotal("borne", "month"), [data]);
+      const dayEsp = catTotal("especes", "day");
+      const dayCB = catTotal("cb", "day");
+      const dayBorne = catTotal("borne", "day");
+      const monthEsp = catTotal("especes", "month");
+      const monthCB = catTotal("cb", "month");
+      const monthBorne = catTotal("borne", "month");
 
-      const chartData = useMemo(() => {
-        const g = {};
-        data.forEach(it => {
-          if (!g[it.date]) g[it.date] = { especes: 0, cb: 0, borne: 0 };
-          g[it.date][it.categorie] = (g[it.date][it.categorie] || 0) + (Number(it.montant) || 0);
-        });
-        return Object.keys(g).sort().slice(-30).map(d => ({
-          date: new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
-          especes: g[d].especes,
-          cb: g[d].cb,
-          borne: g[d].borne
-        }));
-      }, [data]);
+      const fmt = (n) => (n || 0).toFixed(2) + " €";
 
-      if (!auth) {
-        return (
-          <div className="min-h-screen bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-              <div className="text-center mb-8">
-                <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Lock size={40} className="text-blue-600" />
-                </div>
-                <h1 className="text-3xl font-bold text-gray-800 mb-2">Gestion de Caisse</h1>
-                <p className="text-gray-600">Connectez-vous pour continuer</p>
-              </div>
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Identifiant</label>
-                  <input type="text" value={login.identifiant} onChange={(e) => setLogin({ ...login, identifiant: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="admin" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Code</label>
-                  <input type="password" value={login.code} onChange={(e) => setLogin({ ...login, code: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="1234" required />
-                </div>
-                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition shadow-lg">Se connecter</button>
-              </form>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h1 className="text-3xl font-bold text-gray-800">💰 Gestion de Caisse</h1>
-              <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition shadow">
-                <LogOut size={18} />Déconnexion
+      root.innerHTML = `
+        <div class="min-h-screen p-4">
+          <div class="max-w-4xl mx-auto">
+            <div class="flex items-center justify-between mb-6">
+              <h1 class="text-3xl font-bold text-gray-800">💰 Gestion de Caisse</h1>
+              <button id="logout" class="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition shadow">
+                Déconnexion
               </button>
             </div>
 
-            <div className="flex gap-2 mb-6">
-              <button onClick={() => setTab("recettes")} className={`flex-1 py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${tab === "recettes" ? "bg-green-500 text-white shadow-lg" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
-                <TrendingUp size={20} />Recettes
+            <div class="flex gap-2 mb-6">
+              <button id="tabRecettes" class="flex-1 py-3 px-4 rounded-lg font-semibold transition ${state.tab === "recettes" ? "bg-green-500 text-white shadow-lg" : "bg-white text-gray-600"}">
+                Recettes
               </button>
-              <button onClick={() => setTab("fondsCaisse")} className={`flex-1 py-3 px-4 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${tab === "fondsCaisse" ? "bg-blue-500 text-white shadow-lg" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
-                <DollarSign size={20} />Fond de Caisse
+              <button id="tabFonds" class="flex-1 py-3 px-4 rounded-lg font-semibold transition ${state.tab === "fondsCaisse" ? "bg-blue-500 text-white shadow-lg" : "bg-white text-gray-600"}">
+                Fond de Caisse
               </button>
             </div>
 
-            <div className={`${tab === "recettes" ? "bg-green-500" : "bg-blue-500"} rounded-xl p-6 text-white mb-4 shadow-lg`}>
-              <div className="flex items-center justify-between mb-4">
-                <div><p className="text-sm opacity-90 mb-1">Total du jour</p><p className="text-3xl font-bold">{fmtEUR(dayTotal)}</p></div>
+            <div class="${state.tab === "recettes" ? "bg-green-500" : "bg-blue-500"} rounded-xl p-6 text-white mb-4 shadow-lg">
+              <div class="mb-4">
+                <p class="text-sm opacity-90 mb-1">Total du jour</p>
+                <p class="text-3xl font-bold">${fmt(dayTotal)}</p>
               </div>
-              <div className="flex items-center justify-between border-t border-white/20 pt-4">
-                <div><p className="text-sm opacity-90 mb-1">Total du mois</p><p className="text-2xl font-bold">{fmtEUR(monthTotal)}</p></div>
-                <Calendar size={40} className="opacity-50" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              <div className="bg-white rounded-lg p-4 shadow">
-                <div className="flex items-center gap-2 text-gray-600 mb-2"><Banknote size={18} /><span className="text-sm font-medium">Espèces</span></div>
-                <p className="text-xl font-bold text-gray-800">{fmtEUR(dayEsp)}</p>
-                <p className="text-xs text-gray-500 mt-1">Mois: {fmtEUR(monthEsp)}</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <div className="flex items-center gap-2 text-gray-600 mb-2"><CreditCard size={18} /><span className="text-sm font-medium">CB</span></div>
-                <p className="text-xl font-bold text-gray-800">{fmtEUR(dayCB)}</p>
-                <p className="text-xs text-gray-500 mt-1">Mois: {fmtEUR(monthCB)}</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <div className="flex items-center gap-2 text-gray-600 mb-2"><Smartphone size={18} /><span className="text-sm font-medium">Borne</span></div>
-                <p className="text-xl font-bold text-gray-800">{fmtEUR(dayBorne)}</p>
-                <p className="text-xs text-gray-500 mt-1">Mois: {fmtEUR(monthBorne)}</p>
+              <div class="border-t border-white/20 pt-4">
+                <p class="text-sm opacity-90 mb-1">Total du mois</p>
+                <p class="text-2xl font-bold">${fmt(monthTotal)}</p>
               </div>
             </div>
 
-            {chartData.length > 0 && (
-              <div className="bg-white rounded-xl p-6 mb-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Évolution (30 derniers jours)</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip formatter={(v) => fmtEUR(v)} />
-                    <Legend />
-                    <Line type="monotone" dataKey="especes" stroke="#10b981" strokeWidth={2} name="Espèces" />
-                    <Line type="monotone" dataKey="cb" stroke="#3b82f6" strokeWidth={2} name="CB" />
-                    <Line type="monotone" dataKey="borne" stroke="#8b5cf6" strokeWidth={2} name="Borne" />
-                  </LineChart>
-                </ResponsiveContainer>
+            <div class="grid grid-cols-3 gap-3 mb-6">
+              <div class="bg-white rounded-lg p-4 shadow">
+                <p class="text-sm font-medium text-gray-600 mb-2">💵 Espèces</p>
+                <p class="text-xl font-bold text-gray-800">${fmt(dayEsp)}</p>
+                <p class="text-xs text-gray-500 mt-1">Mois: ${fmt(monthEsp)}</p>
               </div>
-            )}
+              <div class="bg-white rounded-lg p-4 shadow">
+                <p class="text-sm font-medium text-gray-600 mb-2">💳 CB</p>
+                <p class="text-xl font-bold text-gray-800">${fmt(dayCB)}</p>
+                <p class="text-xs text-gray-500 mt-1">Mois: ${fmt(monthCB)}</p>
+              </div>
+              <div class="bg-white rounded-lg p-4 shadow">
+                <p class="text-sm font-medium text-gray-600 mb-2">📱 Borne</p>
+                <p class="text-xl font-bold text-gray-800">${fmt(dayBorne)}</p>
+                <p class="text-xs text-gray-500 mt-1">Mois: ${fmt(monthBorne)}</p>
+              </div>
+            </div>
 
-            <button onClick={() => setShowForm(!showForm)} className={`w-full text-white py-4 rounded-xl font-semibold flex items-center justify-center gap-2 mb-6 shadow-lg transition ${tab === "recettes" ? "bg-green-500 hover:bg-green-600" : "bg-blue-500 hover:bg-blue-600"}`}>
-              <Plus size={24} />Ajouter une entrée
+            <button id="addBtn" class="w-full ${state.tab === "recettes" ? "bg-green-500 hover:bg-green-600" : "bg-blue-500 hover:bg-blue-600"} text-white py-4 rounded-xl font-semibold mb-6 shadow-lg transition">
+              + Ajouter une entrée
             </button>
 
-            {showForm && (
-              <div className="bg-white rounded-xl p-6 mb-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-gray-700 mb-4">Nouvelle entrée</h3>
-                <label className="block mb-4">
-                  <span className="text-sm font-medium text-gray-700 mb-2 block">Ajouter une photo {ocrLoad && <span className="text-xs text-gray-500">(lecture...)</span>}</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} className="hidden" id="cam" />
-                    <label htmlFor="cam" className="flex items-center justify-center gap-2 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:bg-gray-200">
-                      <Camera size={20} className="text-gray-600" /><span className="text-sm text-gray-600">Appareil</span>
-                    </label>
-                    <input type="file" accept="image/*" onChange={handlePhoto} className="hidden" id="gal" />
-                    <label htmlFor="gal" className="flex items-center justify-center gap-2 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:bg-gray-200">
-                      <ImageIcon size={20} className="text-gray-600" /><span className="text-sm text-gray-600">Galerie</span>
-                    </label>
-                  </div>
-                </label>
-
-                <label className="block mb-4">
-                  <span className="text-sm font-medium text-gray-700 mb-2 block">Catégorie</span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button type="button" onClick={() => setForm(p => ({ ...p, categorie: "especes" }))} className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition ${form.categorie === "especes" ? "border-green-500 bg-green-50 text-green-700" : "border-gray-300 bg-white text-gray-600"}`}>
-                      <Banknote size={24} /><span className="text-xs font-medium">Espèces</span>
-                    </button>
-                    <button type="button" onClick={() => setForm(p => ({ ...p, categorie: "cb" }))} className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition ${form.categorie === "cb" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300 bg-white text-gray-600"}`}>
-                      <CreditCard size={24} /><span className="text-xs font-medium">CB</span>
-                    </button>
-                    <button type="button" onClick={() => setForm(p => ({ ...p, categorie: "borne" }))} className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition ${form.categorie === "borne" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-300 bg-white text-gray-600"}`}>
-                      <Smartphone size={24} /><span className="text-xs font-medium">Borne</span>
-                    </button>
-                  </div>
-                </label>
-
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <label className="block">
-                    <span className="text-sm font-medium text-gray-700 mb-2 block">Montant (€)</span>
-                    <input type="number" step="0.01" value={form.montant} onChange={(e) => setForm(p => ({ ...p, montant: e.target.value }))} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="123.45" />
+            ${state.showForm ? `
+              <div class="bg-white rounded-xl p-6 mb-6 shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4">Nouvelle entrée</h3>
+                
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                  <label class="flex items-center justify-center gap-2 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:bg-gray-200">
+                    <input type="file" id="photoInput" accept="image/*" class="hidden">
+                    📸 Photo
                   </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-gray-700 mb-2 block">Date</span>
-                    <input type="date" value={form.date} onChange={(e) => setForm(p => ({ ...p, date: e.target.value }))} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-gray-700 mb-2 block">Note</span>
-                    <input type="text" value={form.note} onChange={(e) => setForm(p => ({ ...p, note: e.target.value }))} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="Ex: midi" />
+                  <label class="flex items-center justify-center gap-2 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:bg-gray-200">
+                    <input type="file" id="galleryInput" accept="image/*" class="hidden">
+                    🖼️ Galerie
                   </label>
                 </div>
 
-                <div className="flex gap-2">
-                  <button type="button" onClick={addEntry} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold transition shadow">Enregistrer</button>
-                  <button type="button" onClick={() => setShowForm(false)} className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition">Annuler</button>
+                <div class="grid grid-cols-3 gap-2 mb-4">
+                  <button id="catEsp" class="p-3 rounded-lg border-2 ${state.form.categorie === "especes" ? "border-green-500 bg-green-50 text-green-700" : "border-gray-300"}">💵 Espèces</button>
+                  <button id="catCB" class="p-3 rounded-lg border-2 ${state.form.categorie === "cb" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-300"}">💳 CB</button>
+                  <button id="catBorne" class="p-3 rounded-lg border-2 ${state.form.categorie === "borne" ? "border-purple-500 bg-purple-50 text-purple-700" : "border-gray-300"}">📱 Borne</button>
+                </div>
+
+                <div class="grid grid-cols-3 gap-4 mb-4">
+                  <input type="number" step="0.01" id="montant" value="${state.form.montant}" placeholder="Montant" class="px-4 py-3 border border-gray-300 rounded-lg">
+                  <input type="date" id="date" value="${state.form.date}" class="px-4 py-3 border border-gray-300 rounded-lg">
+                  <input type="text" id="note" value="${state.form.note}" placeholder="Note" class="px-4 py-3 border border-gray-300 rounded-lg">
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="saveBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold">Enregistrer</button>
+                  <button id="cancelBtn" class="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold">Annuler</button>
                 </div>
               </div>
-            )}
+            ` : ''}
 
-            <div className="bg-white rounded-xl p-6 shadow-lg">
-              <h3 className="text-lg font-semibold text-gray-700 mb-4">{tab === "recettes" ? "Liste des recettes" : "Liste du fond de caisse"}</h3>
-              {data.length === 0 ? (
-                <div className="text-center py-10 text-gray-500">Aucune entrée</div>
-              ) : (
-                <div className="space-y-3">
-                  {[...data].sort((a,b) => (b.date || "").localeCompare(a.date || "") || (b.id - a.id)).map(it => (
-                    <div key={it.id} className="flex items-start justify-between gap-3 p-4 rounded-lg border border-gray-200">
+            <div class="bg-white rounded-xl p-6 shadow-lg">
+              <h3 class="text-lg font-semibold text-gray-700 mb-4">Historique</h3>
+              ${data.length === 0 ? '<p class="text-center py-10 text-gray-500">Aucune entrée</p>' : `
+                <div class="space-y-3">
+                  ${data.sort((a,b) => (b.date || "").localeCompare(a.date || "")).map(it => `
+                    <div class="flex items-start justify-between gap-3 p-4 rounded-lg border border-gray-200">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                            {it.categorie === "especes" ? <Banknote size={14}/> : it.categorie === "cb" ? <CreditCard size={14}/> : <Smartphone size={14}/>}
-                            {it.categorie === "especes" ? "Espèces" : it.categorie === "cb" ? "CB" : "Borne"}
-                          </span>
-                          <span className="text-sm text-gray-500">{it.date}</span>
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-xs px-2 py-1 rounded-full bg-gray-100">${it.categorie === "especes" ? "💵" : it.categorie === "cb" ? "💳" : "📱"} ${it.categorie === "especes" ? "Espèces" : it.categorie === "cb" ? "CB" : "Borne"}</span>
+                          <span class="text-sm text-gray-500">${it.date}</span>
                         </div>
-                        <div className="text-lg font-bold text-gray-800 mt-1">{fmtEUR(it.montant)}</div>
-                        {it.note && <div className="text-sm text-gray-600 mt-1">{it.note}</div>}
+                        <div class="text-lg font-bold">${fmt(it.montant)}</div>
+                        ${it.note ? `<div class="text-sm text-gray-600">${it.note}</div>` : ''}
                       </div>
-                      <button onClick={() => delEntry(it.id)} className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg font-medium transition">
-                        <Trash2 size={16} />Supprimer
-                      </button>
+                      <button onclick="delEntry(${it.id})" class="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-sm font-medium">Supprimer</button>
                     </div>
-                  ))}
+                  `).join('')}
                 </div>
-              )}
+              `}
             </div>
           </div>
         </div>
-      );
+      `;
+
+      document.getElementById("logout").onclick = () => {
+        state.auth = false;
+        localStorage.removeItem("isAuthenticated");
+        render();
+      };
+
+      document.getElementById("tabRecettes").onclick = () => { state.tab = "recettes"; render(); };
+      document.getElementById("tabFonds").onclick = () => { state.tab = "fondsCaisse"; render(); };
+      document.getElementById("addBtn").onclick = () => { state.showForm = !state.showForm; render(); };
+
+      if (state.showForm) {
+        const handlePhoto = async (file) => {
+          if (!file || !window.Tesseract) return;
+          try {
+            const { data: { text } } = await window.Tesseract.recognize(file, "fra");
+            const nums = (text.match(/\d{1,6}(?:[.,]\d{1,2})?/g) || []).map(s => parseFloat(s.replace(",", "."))).filter(v => !isNaN(v));
+            if (nums.length) {
+              state.form.montant = String(Math.max(...nums));
+              document.getElementById("montant").value = state.form.montant;
+            }
+          } catch (e) { console.error(e); }
+        };
+
+        document.getElementById("photoInput").onchange = (e) => handlePhoto(e.target.files[0]);
+        document.getElementById("galleryInput").onchange = (e) => handlePhoto(e.target.files[0]);
+        
+        document.getElementById("catEsp").onclick = () => { state.form.categorie = "especes"; render(); };
+        document.getElementById("catCB").onclick = () => { state.form.categorie = "cb"; render(); };
+        document.getElementById("catBorne").onclick = () => { state.form.categorie = "borne"; render(); };
+
+        document.getElementById("montant").oninput = (e) => state.form.montant = e.target.value;
+        document.getElementById("date").oninput = (e) => state.form.date = e.target.value;
+        document.getElementById("note").oninput = (e) => state.form.note = e.target.value;
+
+        document.getElementById("saveBtn").onclick = () => {
+          const amt = parseFloat(state.form.montant);
+          if (!amt || !state.form.date) { alert("Montant et date requis"); return; }
+          
+          const entry = { id: Date.now(), montant: amt, date: state.form.date, note: state.form.note.trim(), categorie: state.form.categorie };
+          
+          if (state.tab === "recettes") state.recettes.push(entry);
+          else state.fonds.push(entry);
+          
+          save();
+          state.showForm = false;
+          state.form = { montant: "", date: new Date().toISOString().slice(0,10), note: "", categorie: "especes" };
+          render();
+        };
+
+        document.getElementById("cancelBtn").onclick = () => { state.showForm = false; render(); };
+      }
     }
 
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
+    window.delEntry = (id) => {
+      if (!confirm("Supprimer ?")) return;
+      if (state.tab === "recettes") state.recettes = state.recettes.filter(r => r.id !== id);
+      else state.fonds = state.fonds.filter(f => f.id !== id);
+      save();
+      render();
+    };
+
+    render();
   </script>
 
 </body>
